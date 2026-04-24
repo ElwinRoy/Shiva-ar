@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🕉️ Shiva AR</title>
+
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#000; font-family:'Segoe UI',sans-serif; overflow:hidden; }
+
+    /* ── Loading ── */
+    #loading-screen {
+      position:fixed; inset:0;
+      background:radial-gradient(ellipse at center,#1a0030 0%,#000 70%);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      z-index:9999; transition:opacity 0.8s ease;
+    }
+    #loading-screen.hidden { opacity:0; pointer-events:none; }
+    .om-symbol {
+      font-size:5rem; color:#ff9800;
+      text-shadow:0 0 40px #ff9800,0 0 80px #ff6500;
+      animation:pulse-om 2s ease-in-out infinite;
+    }
+    @keyframes pulse-om {
+      0%,100%{ transform:scale(1);    text-shadow:0 0 40px #ff9800,0 0 80px  #ff6500; }
+      50%    { transform:scale(1.15); text-shadow:0 0 80px #ff9800,0 0 160px #ff6500; }
+    }
+    .loading-title { color:#ffd700; font-size:1.8rem; letter-spacing:.3em; margin-top:1.5rem; text-transform:uppercase; text-shadow:0 0 20px #ffd700; }
+    .loading-sub   { color:#aaa; margin-top:.5rem; font-size:.9rem; letter-spacing:.15em; }
+    .loader-bar-wrap { width:220px; height:4px; background:rgba(255,255,255,.1); border-radius:2px; margin-top:2rem; overflow:hidden; }
+    .loader-bar {
+      height:100%; background:linear-gradient(90deg,#ff6500,#ffd700,#ff6500);
+      background-size:200% 100%; animation:bar-slide 1.5s linear infinite; border-radius:2px;
+    }
+    @keyframes bar-slide { 0%{ background-position:200% 0; } 100%{ background-position:-200% 0; } }
+
+    /* ── UI ── */
+    #ui-overlay { position:fixed; inset:0; pointer-events:none; z-index:100; }
+    .top-bar {
+      position:absolute; top:0; left:0; right:0; padding:1rem 1.5rem;
+      display:flex; align-items:center; justify-content:space-between;
+      background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);
+    }
+    .app-title { color:#ffd700; font-size:1.1rem; font-weight:700; letter-spacing:.2em; text-shadow:0 0 15px #ffd700; text-transform:uppercase; }
+    .status-dot { width:10px; height:10px; border-radius:50%; background:#ff4444; box-shadow:0 0 8px #ff4444; transition:all .4s; }
+    .status-dot.found { background:#00ff88; box-shadow:0 0 12px #00ff88; }
+    .scan-hint { position:absolute; bottom:120px; left:50%; transform:translateX(-50%); text-align:center; pointer-events:none; transition:opacity .5s; }
+    .scan-hint.hidden { opacity:0; }
+    .scan-frame { width:180px; height:180px; border:2px solid rgba(255,165,0,.6); border-radius:8px; margin:0 auto 1rem; position:relative; animation:scan-pulse 2s ease-in-out infinite; }
+    .scan-frame::before{ content:''; position:absolute; top:-2px;    left:-2px;  width:24px; height:24px; border:3px solid #ff9800; border-right:none; border-bottom:none; }
+    .scan-frame::after { content:''; position:absolute; top:-2px;    right:-2px; width:24px; height:24px; border:3px solid #ff9800; border-left:none;  border-bottom:none; }
+    .scan-frame .c1    {             position:absolute; bottom:-2px; left:-2px;  width:24px; height:24px; border:3px solid #ff9800; border-right:none; border-top:none; }
+    .scan-frame .c2    {             position:absolute; bottom:-2px; right:-2px; width:24px; height:24px; border:3px solid #ff9800; border-left:none;  border-top:none; }
+    .scan-frame .laser { position:absolute; left:4px; right:4px; height:2px; background:linear-gradient(90deg,transparent,#ff9800,transparent); top:0; animation:laser-scan 2s linear infinite; box-shadow:0 0 8px #ff9800; }
+    @keyframes laser-scan { 0%{ top:0% } 100%{ top:100% } }
+    @keyframes scan-pulse { 0%,100%{ box-shadow:0 0 0 0 rgba(255,152,0,.3); } 50%{ box-shadow:0 0 0 12px rgba(255,152,0,0); } }
+    .scan-text { color:rgba(255,200,100,.9); font-size:.85rem; letter-spacing:.12em; text-transform:uppercase; text-shadow:0 0 10px rgba(255,152,0,.8); animation:blink-text 1.5s ease-in-out infinite; }
+    @keyframes blink-text { 0%,100%{ opacity:1; } 50%{ opacity:.4; } }
+    .found-banner { position:absolute; bottom:80px; left:50%; transform:translateX(-50%); background:linear-gradient(135deg,rgba(255,152,0,.15),rgba(255,100,0,.1)); border:1px solid rgba(255,152,0,.4); border-radius:30px; padding:.6rem 1.5rem; color:#ffd700; font-size:.85rem; letter-spacing:.15em; text-transform:uppercase; backdrop-filter:blur(8px); opacity:0; transition:opacity .5s; white-space:nowrap; }
+    .found-banner.visible { opacity:1; }
+    .bottom-bar { position:absolute; bottom:0; left:0; right:0; padding:1rem; background:linear-gradient(to top,rgba(0,0,0,.7),transparent); display:flex; justify-content:center; gap:1.5rem; }
+    .ctrl-btn { pointer-events:all; background:rgba(255,152,0,.15); border:1px solid rgba(255,152,0,.4); border-radius:50%; width:52px; height:52px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:1.3rem; backdrop-filter:blur(6px); transition:all .2s; color:#ffd700; }
+    .ctrl-btn:hover  { background:rgba(255,152,0,.35); transform:scale(1.1); }
+    .ctrl-btn:active { transform:scale(.95); }
+    a-scene { z-index:2; }
+  </style>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="om-symbol">🕉️</div>
+  <div class="loading-title">Shiva AR</div>
+  <div class="loading-sub">Initializing Divine Vision…</div>
+  <div class="loader-bar-wrap"><div class="loader-bar"></div></div>
+</div>
+
+<a-scene
+  mindar-image="imageTargetSrc:./targets.mind; autoStart:true; uiLoading:no; uiScanning:no; uiError:no;"
+  color-space="sRGB"
+  renderer="colorManagement:true; physicallyCorrectLights:true; sortObjects:true"
+  vr-mode-ui="enabled:false"
+  device-orientation-permission-ui="enabled:false"
+>
+  <a-assets timeout="90000">
+    <a-asset-item id="shiva-glb" src="./shiva.glb"></a-asset-item>
+  </a-assets>
+
+  <a-camera></a-camera>
+
+  <a-entity mindar-image-target="targetIndex:0">
+
+    <!-- ══════════════════════════════════
+         LAYER 1: RADIAL SUNBURST
+         z = -0.30 (furthest back — behind everything)
+    ══════════════════════════════════ -->
+    <a-entity position="0 0.56 -0.30"
+      animation="property:rotation; to:0 0 360; loop:true; dur:30000; easing:linear">
+      <a-plane width="0.055" height="1.5" rotation="0 0 0"   material="color:#ff7700; opacity:0.55; transparent:true; side:double; emissive:#ff4400; emissiveIntensity:2" animation="property:material.opacity; from:0.3; to:0.7; dir:alternate; dur:700; loop:true"></a-plane>
+      <a-plane width="0.045" height="1.3" rotation="0 0 15"  material="color:#ffaa00; opacity:0.45; transparent:true; side:double; emissive:#ff6600; emissiveIntensity:1.8" animation="property:material.opacity; from:0.25; to:0.6; dir:alternate; dur:800; loop:true; delay:80"></a-plane>
+      <a-plane width="0.045" height="1.3" rotation="0 0 -15" material="color:#ffaa00; opacity:0.45; transparent:true; side:double; emissive:#ff6600; emissiveIntensity:1.8" animation="property:material.opacity; from:0.25; to:0.6; dir:alternate; dur:800; loop:true; delay:160"></a-plane>
+      <a-plane width="0.038" height="1.1" rotation="0 0 30"  material="color:#ffcc00; opacity:0.35; transparent:true; side:double; emissive:#ff8800; emissiveIntensity:1.5" animation="property:material.opacity; from:0.2; to:0.5; dir:alternate; dur:950; loop:true; delay:240"></a-plane>
+      <a-plane width="0.038" height="1.1" rotation="0 0 -30" material="color:#ffcc00; opacity:0.35; transparent:true; side:double; emissive:#ff8800; emissiveIntensity:1.5" animation="property:material.opacity; from:0.2; to:0.5; dir:alternate; dur:950; loop:true; delay:320"></a-plane>
+      <a-plane width="0.032" height="1.0" rotation="0 0 45"  material="color:#ffdd44; opacity:0.28; transparent:true; side:double; emissive:#ff9900; emissiveIntensity:1.2" animation="property:material.opacity; from:0.15; to:0.4; dir:alternate; dur:1100; loop:true; delay:100"></a-plane>
+      <a-plane width="0.032" height="1.0" rotation="0 0 -45" material="color:#ffdd44; opacity:0.28; transparent:true; side:double; emissive:#ff9900; emissiveIntensity:1.2" animation="property:material.opacity; from:0.15; to:0.4; dir:alternate; dur:1100; loop:true; delay:180"></a-plane>
+      <a-plane width="0.026" height="0.9" rotation="0 0 60"  material="color:#ff9900; opacity:0.22; transparent:true; side:double; emissive:#ff6600; emissiveIntensity:1"   animation="property:material.opacity; from:0.1; to:0.32; dir:alternate; dur:1250; loop:true; delay:300"></a-plane>
+      <a-plane width="0.026" height="0.9" rotation="0 0 -60" material="color:#ff9900; opacity:0.22; transparent:true; side:double; emissive:#ff6600; emissiveIntensity:1"   animation="property:material.opacity; from:0.1; to:0.32; dir:alternate; dur:1250; loop:true; delay:380"></a-plane>
+      <a-plane width="0.022" height="0.8" rotation="0 0 75"  material="color:#ffbb00; opacity:0.18; transparent:true; side:double; emissive:#ff7700; emissiveIntensity:0.8" animation="property:material.opacity; from:0.08; to:0.25; dir:alternate; dur:1400; loop:true; delay:460"></a-plane>
+      <a-plane width="0.022" height="0.8" rotation="0 0 -75" material="color:#ffbb00; opacity:0.18; transparent:true; side:double; emissive:#ff7700; emissiveIntensity:0.8" animation="property:material.opacity; from:0.08; to:0.25; dir:alternate; dur:1400; loop:true; delay:540"></a-plane>
+      <a-plane width="0.018" height="0.7" rotation="0 0 90"  material="color:#ffcc00; opacity:0.14; transparent:true; side:double; emissive:#ff8800; emissiveIntensity:0.7" animation="property:material.opacity; from:0.05; to:0.20; dir:alternate; dur:1600; loop:true; delay:600"></a-plane>
+    </a-entity>
+
+    <!-- ══════════════════════════════════
+         LAYER 2: FIRE CORONA RING
+         z = -0.22 … -0.18  (behind model at z=0)
+    ══════════════════════════════════ -->
+    <!-- Widest soft bloom -->
+    <a-torus radius="0.76" radiusTubular="0.22" position="0 0.56 -0.22"
+      material="color:#ff2200; opacity:0.18; transparent:true; emissive:#ff1100; emissiveIntensity:1.5; side:double"
+      animation="property:scale; from:0.93 0.93 1; to:1.07 1.07 1; dir:alternate; dur:1400; loop:true; easing:easeInOutSine"
+      animation__op="property:material.opacity; from:0.10; to:0.28; dir:alternate; dur:1000; loop:true"
+    ></a-torus>
+
+    <!-- Dark outer fire ring -->
+    <a-torus radius="0.73" radiusTubular="0.10" position="0 0.56 -0.20"
+      material="color:#bb2200; opacity:0.80; transparent:true; emissive:#991100; emissiveIntensity:2; side:double"
+      animation="property:scale; from:0.96 0.96 1; to:1.04 1.04 1; dir:alternate; dur:900; loop:true; easing:easeInOutSine"
+      animation__op="property:material.opacity; from:0.65; to:0.90; dir:alternate; dur:700; loop:true"
+    ></a-torus>
+
+    <!-- Main bright orange-red ring -->
+    <a-torus radius="0.71" radiusTubular="0.07" position="0 0.56 -0.19"
+      material="color:#ff4400; opacity:0.95; transparent:true; emissive:#ff2200; emissiveIntensity:3.5; side:double"
+      animation="property:scale; from:0.97 0.97 1; to:1.03 1.03 1; dir:alternate; dur:650; loop:true; easing:easeInOutSine"
+      animation__op="property:material.opacity; from:0.80; to:1.0; dir:alternate; dur:550; loop:true"
+    ></a-torus>
+
+    <!-- Hot orange inner ring -->
+    <a-torus radius="0.69" radiusTubular="0.045" position="0 0.56 -0.18"
+      material="color:#ff8800; opacity:0.90; transparent:true; emissive:#ff6600; emissiveIntensity:4; side:double"
+      animation="property:scale; from:0.975 0.975 1; to:1.025 1.025 1; dir:alternate; dur:500; loop:true; easing:easeInOutSine"
+      animation__op="property:material.opacity; from:0.70; to:1.0; dir:alternate; dur:420; loop:true"
+    ></a-torus>
+
+    <!-- Bright gold highlight ring -->
+    <a-torus radius="0.67" radiusTubular="0.025" position="0 0.56 -0.17"
+      material="color:#ffcc00; opacity:0.95; transparent:true; emissive:#ffaa00; emissiveIntensity:5; side:double"
+      animation="property:scale; from:0.98 0.98 1; to:1.02 1.02 1; dir:alternate; dur:380; loop:true; easing:easeInOutSine"
+      animation__op="property:material.opacity; from:0.65; to:1.0; dir:alternate; dur:350; loop:true"
+    ></a-torus>
+
+    <!-- White-hot core ring -->
+    <a-torus radius="0.655" radiusTubular="0.012" position="0 0.56 -0.16"
+      material="color:#fff8cc; opacity:1.0; transparent:true; emissive:#ffffff; emissiveIntensity:8; side:double"
+      animation="property:material.opacity; from:0.55; to:1.0; dir:alternate; dur:280; loop:true"
+    ></a-torus>
+
+    <!-- ══════════════════════════════════
+         LAYER 3: ELECTRIC WATER BASE SWIRL
+         z slightly negative but above ground — shows at feet
+         Sits at z=-0.05 so it hugs the base just behind model feet
+    ══════════════════════════════════ -->
+    <a-torus radius="0.52" radiusTubular="0.013" rotation="-90 0 0" position="0 0.006 -0.05"
+      material="color:#00aaff; opacity:0.90; transparent:true; emissive:#0077ff; emissiveIntensity:4"
+      animation="property:rotation; from:-90 0 0; to:-90 360 0; loop:true; dur:3500; easing:linear"
+      animation__scale="property:scale; from:1 1 1; to:1.10 1.10 1; dir:alternate; dur:900; loop:true"
+    ></a-torus>
+
+    <a-torus radius="0.40" radiusTubular="0.010" rotation="-90 0 0" position="0 0.010 -0.05"
+      material="color:#44ccff; opacity:0.85; transparent:true; emissive:#00aaff; emissiveIntensity:5"
+      animation="property:rotation; from:-90 0 0; to:-90 -360 0; loop:true; dur:2600; easing:linear"
+    ></a-torus>
+
+    <a-torus radius="0.27" radiusTubular="0.008" rotation="-90 0 0" position="0 0.013 -0.05"
+      material="color:#88eeff; opacity:0.80; transparent:true; emissive:#44ddff; emissiveIntensity:6"
+      animation="property:rotation; from:-90 0 0; to:-90 360 0; loop:true; dur:1800; easing:linear"
+      animation__scale="property:scale; from:0.92 0.92 1; to:1.08 1.08 1; dir:alternate; dur:700; loop:true"
+    ></a-torus>
+
+    <!-- Ground glow disc (blue electric) -->
+    <a-circle radius="0.48" rotation="-90 0 0" position="0 0.001 -0.05"
+      material="color:#0044cc; opacity:0.14; transparent:true; side:double"
+      animation="property:material.opacity; from:0.05; to:0.25; dir:alternate; dur:1500; loop:true"
+      animation__scale="property:scale; from:0.88 0.88 1; to:1.12 1.12 1; dir:alternate; dur:2000; loop:true"
+    ></a-circle>
+
+    <!-- Ground glow disc (warm orange) -->
+    <a-circle radius="0.46" rotation="-90 0 0" position="0 0.002 -0.05"
+      material="color:#ff6600; opacity:0.18; transparent:true; side:double"
+      animation="property:material.opacity; from:0.07; to:0.30; dir:alternate; dur:1200; loop:true; easing:easeInOutSine"
+    ></a-circle>
+
+    <!-- ══════════════════════════════════
+         LAYER 4: RISING FIRE EMBERS / SPARKS
+         These travel upward from the ring sides.
+         Start z=-0.12 so they appear behind the model
+    ══════════════════════════════════ -->
+    <!-- Left sparks -->
+    <a-sphere radius="0.020" position="-0.55 0.56 -0.12"
+      material="color:#ff5500; emissive:#ff3300; emissiveIntensity:7; transparent:true; opacity:1"
+      animation="property:position; from:-0.56 0.14 -0.12; to:-0.72 1.20 -0.12; dur:1500; loop:true; easing:easeOutCubic"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1500; loop:true"
+      animation__s="property:scale; from:1 1 1; to:0.2 0.2 0.2; dur:1500; loop:true"
+    ></a-sphere>
+    <a-sphere radius="0.014" position="-0.62 0.60 -0.12"
+      material="color:#ffaa00; emissive:#ff8800; emissiveIntensity:7; transparent:true; opacity:1"
+      animation="property:position; from:-0.62 0.22 -0.12; to:-0.80 1.30 -0.12; dur:1850; loop:true; easing:easeOutCubic; delay:350"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1850; loop:true; delay:350"
+      animation__s="property:scale; from:1 1 1; to:0.1 0.1 0.1; dur:1850; loop:true; delay:350"
+    ></a-sphere>
+    <a-sphere radius="0.010" position="-0.50 0.45 -0.12"
+      material="color:#ffdd00; emissive:#ffbb00; emissiveIntensity:8; transparent:true; opacity:1"
+      animation="property:position; from:-0.50 0.18 -0.12; to:-0.62 1.05 -0.12; dur:1350; loop:true; easing:easeOutCubic; delay:750"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1350; loop:true; delay:750"
+    ></a-sphere>
+
+    <!-- Right sparks -->
+    <a-sphere radius="0.020" position="0.55 0.56 -0.12"
+      material="color:#ff5500; emissive:#ff3300; emissiveIntensity:7; transparent:true; opacity:1"
+      animation="property:position; from:0.56 0.14 -0.12; to:0.72 1.20 -0.12; dur:1600; loop:true; easing:easeOutCubic; delay:180"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1600; loop:true; delay:180"
+      animation__s="property:scale; from:1 1 1; to:0.2 0.2 0.2; dur:1600; loop:true; delay:180"
+    ></a-sphere>
+    <a-sphere radius="0.014" position="0.64 0.60 -0.12"
+      material="color:#ffaa00; emissive:#ff8800; emissiveIntensity:7; transparent:true; opacity:1"
+      animation="property:position; from:0.64 0.22 -0.12; to:0.82 1.30 -0.12; dur:1950; loop:true; easing:easeOutCubic; delay:580"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1950; loop:true; delay:580"
+    ></a-sphere>
+    <a-sphere radius="0.010" position="0.48 0.40 -0.12"
+      material="color:#ffdd00; emissive:#ffbb00; emissiveIntensity:8; transparent:true; opacity:1"
+      animation="property:position; from:0.48 0.18 -0.12; to:0.58 1.0 -0.12; dur:1450; loop:true; easing:easeOutCubic; delay:1100"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1450; loop:true; delay:1100"
+    ></a-sphere>
+
+    <!-- Top crown sparks — behind model head -->
+    <a-sphere radius="0.010" position="0.08 1.12 -0.12"
+      material="color:#ffee88; emissive:#ffdd00; emissiveIntensity:7; transparent:true; opacity:1"
+      animation="property:position; from:0.08 1.12 -0.12; to:0.18 1.55 -0.12; dur:1100; loop:true; easing:easeOutCubic; delay:200"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1100; loop:true; delay:200"
+    ></a-sphere>
+    <a-sphere radius="0.008" position="-0.10 1.08 -0.12"
+      material="color:#ffaa44; emissive:#ff9900; emissiveIntensity:7; transparent:true; opacity:1"
+      animation="property:position; from:-0.10 1.08 -0.12; to:-0.20 1.50 -0.12; dur:1250; loop:true; easing:easeOutCubic; delay:650"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1250; loop:true; delay:650"
+    ></a-sphere>
+    <a-sphere radius="0.009" position="0.02 1.15 -0.12"
+      material="color:#ffffff; emissive:#ffffff; emissiveIntensity:8; transparent:true; opacity:1"
+      animation="property:position; from:0.02 1.15 -0.12; to:0.06 1.60 -0.12; dur:1000; loop:true; easing:easeOutCubic; delay:900"
+      animation__fade="property:material.opacity; from:1; to:0; dur:1000; loop:true; delay:900"
+    ></a-sphere>
+
+    <!-- ══════════════════════════════════
+         LAYER 5: SHIVA 3D MODEL
+         z = 0  (front-most — in front of ALL effects)
+    ══════════════════════════════════ -->
+    <a-gltf-model
+      id="shiva-model"
+      src="#shiva-glb"
+      position="0 0.0 0"
+      scale="0.60 0.60 0.60"
+      rotation="0 0 0"
+      gltf-model-fix
+      animation__appear="property:scale; from:0 0 0; to:0.60 0.60 0.60; dur:1600; easing:easeOutElastic"
+      animation__float="property:position; from:0 0.00 0; to:0 0.07 0; dir:alternate; dur:2600; loop:true; easing:easeInOutSine"
+    ></a-gltf-model>
+
+    <!-- ══════════════════════════════════
+         LIGHTING
+    ══════════════════════════════════ -->
+    <a-light type="ambient" color="#ffffff" intensity="1.5"></a-light>
+    <a-light type="point" color="#ffeecc" intensity="5.0" distance="3.5" position="0 0.7 1.2"></a-light>
+    <a-light type="point" color="#ff8800" intensity="4.0" distance="3.0" position="0 1.5 -0.2"
+      animation="property:intensity; from:3.0; to:5.5; dir:alternate; dur:800; loop:true"
+    ></a-light>
+    <a-light type="point" color="#44aaff" intensity="2.5" distance="2.5" position="-1.0 0.5 0.6"></a-light>
+    <a-light type="point" color="#ffd700" intensity="2.5" distance="2.5" position="1.0 0.8 -0.2"
+      animation="property:intensity; from:1.5; to:3.5; dir:alternate; dur:1200; loop:true"
+    ></a-light>
+    <a-light type="point" color="#ff9933" intensity="2.0" distance="2.0" position="0 -0.2 0.8"></a-light>
+
+  </a-entity>
+</a-scene>
+
+<!-- UI Overlay -->
+<div id="ui-overlay">
+  <div class="top-bar">
+    <div class="app-title">🕉️ Shiva AR</div>
+    <div class="status-dot" id="statusDot"></div>
+  </div>
+  <div class="scan-hint" id="scanHint">
+    <div class="scan-frame">
+      <div class="c1"></div><div class="c2"></div>
+      <div class="laser"></div>
+    </div>
+    <div class="scan-text">Point at the Shiva marker</div>
+  </div>
+  <div class="found-banner" id="foundBanner">✨ Lord Shiva Manifested ✨</div>
+  <div class="bottom-bar">
+    <div class="ctrl-btn" id="btnToggleAnim">⚡</div>
+    <div class="ctrl-btn" id="btnScreenshot">📸</div>
+    <div class="ctrl-btn" id="btnFullscreen">⛶</div>
+  </div>
+</div>
+
+<script>
+AFRAME.registerComponent('gltf-model-fix', {
+  init() {
+    this.el.addEventListener('model-loaded', () => {
+      const mesh = this.el.getObject3D('mesh');
+      if (!mesh) return;
+      mesh.traverse(node => {
+        if (!node.isMesh) return;
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        mats.forEach(mat => {
+          const slots = ['map','emissiveMap','normalMap','roughnessMap','metalnessMap','aoMap','lightMap'];
+          slots.forEach(key => {
+            if (mat[key]) {
+              mat[key].encoding = THREE.sRGBEncoding;
+              mat[key].needsUpdate = true;
+            }
+          });
+          if (mat.color) mat.color.convertSRGBToLinear();
+          mat.needsUpdate = true;
+        });
+      });
+      console.log('✅ shiva.glb texture encoding fixed');
+      showToast('✅ Shiva manifested!', '#00ff88');
+    });
+
+    this.el.addEventListener('model-error', e => {
+      console.error('❌ shiva.glb error:', e.detail);
+      showToast('❌ shiva.glb failed — open F12 console', '#ff4444');
+    });
+  }
+});
+
+window.addEventListener('load', () => {
+  const scene = document.querySelector('a-scene');
+  const doHide = () => setTimeout(() => document.getElementById('loading-screen').classList.add('hidden'), 600);
+  scene.hasLoaded ? doHide() : scene.addEventListener('loaded', doHide);
+
+  const hint      = document.getElementById('scanHint');
+  const banner    = document.getElementById('foundBanner');
+  const statusDot = document.getElementById('statusDot');
+  const target    = document.querySelector('[mindar-image-target]');
+
+  target.addEventListener('targetFound', () => {
+    hint.classList.add('hidden');
+    banner.classList.add('visible');
+    statusDot.classList.add('found');
+    playFlash();
+  });
+  target.addEventListener('targetLost', () => {
+    hint.classList.remove('hidden');
+    banner.classList.remove('visible');
+    statusDot.classList.remove('found');
+  });
+
+  let paused = false;
+  document.getElementById('btnToggleAnim').addEventListener('click', () => {
+    paused = !paused;
+    document.querySelectorAll('[mindar-image-target] *').forEach(el => {
+      Object.keys(el.components || {}).filter(k => k.startsWith('animation'))
+        .forEach(k => paused ? el.components[k].pause() : el.components[k].play());
+    });
+  });
+
+  document.getElementById('btnFullscreen').addEventListener('click', () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  });
+
+  document.getElementById('btnScreenshot').addEventListener('click', () => {
+    const c = document.querySelector('canvas.a-canvas');
+    if (!c) return;
+    const a = document.createElement('a');
+    a.download = 'shiva-ar.png'; a.href = c.toDataURL('image/png'); a.click();
+  });
+});
+
+function playFlash() {
+  const f = document.createElement('div');
+  Object.assign(f.style, {
+    position:'fixed', inset:'0',
+    background:'radial-gradient(circle,rgba(255,180,0,.45),transparent 70%)',
+    zIndex:'500', pointerEvents:'none', opacity:'1', transition:'opacity 1.3s',
+  });
+  document.body.appendChild(f);
+  requestAnimationFrame(() => { f.style.opacity='0'; });
+  setTimeout(() => f.remove(), 1600);
+}
+
+function showToast(msg, color) {
+  const t = document.createElement('div');
+  Object.assign(t.style, {
+    position:'fixed', bottom:'160px', left:'50%', transform:'translateX(-50%)',
+    background:'rgba(0,0,0,.92)', border:'1px solid '+color,
+    color:color, padding:'.5rem 1.2rem', borderRadius:'20px',
+    fontSize:'.82rem', letterSpacing:'.08em', zIndex:'9999',
+    fontFamily:'monospace', whiteSpace:'nowrap', transition:'opacity .5s', opacity:'1',
+  });
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(),600); }, 4000);
+}
+</script>
+</body>
+</html>
